@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { error, json, requireUser } from "@/lib/api";
+import { error, json, requireProtectedMutation } from "@/lib/api";
 import { audit, getStore } from "@/lib/store";
 import type { DailyReport } from "@/lib/types";
 
@@ -17,7 +17,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const auth = await requireUser("daily_reports:self");
+  const auth = await requireProtectedMutation(request, "daily_reports:self");
   if ("response" in auth) return auth.response;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return error("Daily report is incomplete.", 422);

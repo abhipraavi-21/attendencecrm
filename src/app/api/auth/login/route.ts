@@ -12,10 +12,23 @@ export async function POST(request: Request) {
   if (!parsed.success) return error("Enter a valid email and password.", 422);
   const store = getStore();
   const user = store.users.find((item) => item.email.toLowerCase() === parsed.data.email.toLowerCase());
+  const locked = user?.lockedUntil && new Date(user.lockedUntil) > new Date();
+  if (locked) {
+    audit(user.id, "LOGIN_LOCKED_OUT", "User", user.id, { ip });
+    return error("Invalid credentials or account temporarily unavailable.", 401);
+  }
   if (!user || !user.active || !verifyPassword(parsed.data.password, user.passwordHash)) {
+    if (user) {
+      user.failedLoginCount += 1;
+      if (user.failedLoginCount >= 5) {
+        user.lockedUntil = new Date(Date.now() + 15 * 60_000).toISOString();
+      }
+    }
     audit(user?.id || "anonymous", "LOGIN_FAILED", "User", user?.id || parsed.data.email, { ip });
     return error("Invalid credentials.", 401);
   }
+  user.failedLoginCount = 0;
+  user.lockedUntil = undefined;
   await setSessionCookie(signSession(user));
   audit(user.id, "LOGIN_SUCCESS", "User", user.id, { ip });
   return json({ user: { id: user.id, email: user.email, role: user.role, employeeId: user.employeeId } });

@@ -1,4 +1,5 @@
 import { hashPassword } from "./auth";
+import { createHash } from "crypto";
 import { calculateAttendance as calculateAttendanceRaw, calculateLeaveDays, payrollSummary } from "./business-rules";
 import type {
   AttendanceRecord,
@@ -26,13 +27,14 @@ type Store = {
   notifications: Notification[];
   auditLogs: AuditLog[];
   settings: CompanySettings;
-  resetTokens: { token: string; userId: string; expiresAt: string }[];
+  resetTokens: { tokenHash: string; userId: string; expiresAt: string }[];
   rateLimits: Map<string, { count: number; resetAt: number }>;
 };
 
 const now = () => new Date().toISOString();
 const today = () => new Date().toISOString().slice(0, 10);
 const id = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const calculateAttendance = calculateAttendanceRaw as (input: {
   checkInAt: string;
   checkOutAt?: string;
@@ -110,22 +112,45 @@ function createInitialStore(): Store {
     employee(8, "Priya Desai", "QA", "QA Engineer"),
   ];
 
-  const users: User[] = [
-    ["user_1", "admin@example.com", "SUPER_ADMIN", "emp_1"],
-    ["user_2", "hr@example.com", "HR_ADMIN", "emp_2"],
-    ["user_3", "manager@example.com", "MANAGER", "emp_3"],
-    ["user_4", "employee@example.com", "EMPLOYEE", "emp_4"],
-    ["user_7", "accountant@example.com", "ACCOUNTANT", "emp_7"],
-  ].map(([userId, email, role, employeeId]) => ({
-    id: userId,
-    email,
-    passwordHash: hashPassword(process.env.INITIAL_ADMIN_PASSWORD || "ChangeMeBeforeProduction!123"),
-    role: role as User["role"],
-    employeeId,
-    active: true,
-    forcePasswordChange: false,
-    createdAt: now(),
-  }));
+  const users: User[] = [];
+  if (process.env.INITIAL_ADMIN_EMAIL && process.env.INITIAL_ADMIN_PASSWORD) {
+    users.push({
+      id: "user_initial_admin",
+      email: process.env.INITIAL_ADMIN_EMAIL,
+      passwordHash: hashPassword(process.env.INITIAL_ADMIN_PASSWORD),
+      role: "SUPER_ADMIN",
+      employeeId: "emp_1",
+      active: true,
+      forcePasswordChange: true,
+      failedLoginCount: 0,
+      sessionVersion: 1,
+      createdAt: now(),
+    });
+  }
+
+  if (process.env.NODE_ENV !== "production" && process.env.ALLOW_DEVELOPMENT_SEED_USERS === "true" && process.env.DEVELOPMENT_SEED_PASSWORD) {
+    const seedUsers: Array<[string, string, User["role"], string]> = [
+      ["user_dev_admin", "local-admin@attendance.test", "SUPER_ADMIN", "emp_1"],
+      ["user_dev_hr", "local-hr@attendance.test", "HR_ADMIN", "emp_2"],
+      ["user_dev_manager", "local-manager@attendance.test", "MANAGER", "emp_3"],
+      ["user_dev_employee", "local-employee@attendance.test", "EMPLOYEE", "emp_4"],
+      ["user_dev_accountant", "local-accountant@attendance.test", "ACCOUNTANT", "emp_7"],
+    ];
+    users.push(
+      ...seedUsers.map(([userId, email, role, employeeId]) => ({
+        id: userId,
+        email,
+        passwordHash: hashPassword(process.env.DEVELOPMENT_SEED_PASSWORD as string),
+        role,
+        employeeId,
+        active: true,
+        forcePasswordChange: true,
+        failedLoginCount: 0,
+        sessionVersion: 1,
+        createdAt: now(),
+      })),
+    );
+  }
 
   const attendance: AttendanceRecord[] = employees.slice(0, 6).map((item, index) => {
     const checkIn = new Date();

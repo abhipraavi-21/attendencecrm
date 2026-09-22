@@ -4,7 +4,7 @@ Production-oriented office CRM built with Next.js App Router, TypeScript, Tailwi
 
 ## Main Features
 
-- Secure credentials login, logout, forgot/reset/change-password route, signed HTTP-only session cookie, rate limiting for sensitive endpoints, and safe error messages.
+- Secure credentials login, logout, logout-all-devices, forgot/reset/change-password route, signed HTTP-only session cookie, login lockout, CSRF-checked mutations, rate limiting for sensitive endpoints, and safe error messages.
 - Roles: Super Admin, HR/Admin, Manager, Employee, Accountant.
 - Server-side RBAC for dashboard, employees, attendance, leave, projects, tasks, reports, payroll, settings, and audit logs.
 - Employee records with profile, employment, department, designation, branch, shift, salary/bank placeholders, status, documents, and archival status.
@@ -36,15 +36,9 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-Seeded development accounts use password `ChangeMeBeforeProduction!123`:
+No default login credentials are committed or shown in the browser. Create the first administrator with `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`.
 
-- `admin@example.com`
-- `hr@example.com`
-- `manager@example.com`
-- `employee@example.com`
-- `accountant@example.com`
-
-Change these before production.
+Development-only seed users are created only when `ALLOW_DEVELOPMENT_SEED_USERS=true` and `DEVELOPMENT_SEED_PASSWORD` is set locally. Never enable development seed users in production.
 
 ## Environment Variables
 
@@ -57,12 +51,15 @@ Required for production:
 - `APP_URL`
 - `INITIAL_ADMIN_EMAIL`
 - `INITIAL_ADMIN_PASSWORD`
+- `AUTH_SECRET`
 
 Optional:
 
 - SMTP variables for email delivery
 - `UPLOAD_MAX_MB`
 - `OFFICE_TIME_ZONE`
+- `ALLOW_DEVELOPMENT_SEED_USERS`
+- `DEVELOPMENT_SEED_PASSWORD`
 
 If SMTP is not configured, the app continues to work; email delivery should be logged as disabled by the production mail adapter.
 
@@ -76,7 +73,7 @@ npm run db:migrate
 npm run db:seed
 ```
 
-Note: the local development runtime currently uses an in-memory seed store so the app runs immediately. The Prisma CLI install was blocked in this environment by an npm registry resolution issue involving a non-existent `workerd` package version. The schema is ready for managed PostgreSQL once Prisma CLI installs normally.
+Note: the local development runtime currently uses an in-memory store. Production should connect Prisma to PostgreSQL and run the schema migrations before launch.
 
 ## Commands
 
@@ -117,9 +114,13 @@ See `docs/DEPLOYMENT_CHECKLIST.md`.
 - Keep migrations reversible where practical.
 - Roll back by deploying the previous Vercel build and restoring the last compatible database backup.
 
+## Initial Administrator Setup
+
+Set `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`, and a strong `AUTH_SECRET` in the target environment before first boot. The first admin is forced to change password after creation. Do not store production credentials in Git.
+
 ## Known Limitations
 
 - Biometric and face recognition are not implemented. The schema and attendance verification metadata leave extension points for future device integrations.
 - WhatsApp notifications are documented as a future integration until a real provider API is configured.
 - Local file upload storage adapter is documented as future work; production should use private object storage.
-- Local data is in-memory for immediate demo use; production should connect Prisma to PostgreSQL.
+- Local data is in-memory for development use; production should connect Prisma to PostgreSQL.

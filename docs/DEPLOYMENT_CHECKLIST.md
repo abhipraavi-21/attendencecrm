@@ -11,4 +11,5 @@
 - Verify secure cookies over HTTPS.
 - Run `npm run lint`, `npm run type-check`, `npm test`, and `npm run build`.
 - Configure backups, point-in-time recovery, and rollback deployment.
-- Rotate the fallback development password before production use.
+- Ensure `ALLOW_DEVELOPMENT_SEED_USERS` is unset or false in production.
+- Confirm no real credentials are committed in tracked files.

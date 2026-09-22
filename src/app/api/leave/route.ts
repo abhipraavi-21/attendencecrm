@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { error, json, requireUser } from "@/lib/api";
+import { error, json, requireProtectedMutation } from "@/lib/api";
 import { audit, getStore, requestLeave } from "@/lib/store";
 
 const schema = z.object({
@@ -15,7 +15,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const auth = await requireUser();
+  const auth = await requireProtectedMutation(request);
   if ("response" in auth) return auth.response;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return error("Invalid leave request.", 422);

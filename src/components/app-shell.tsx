@@ -8,7 +8,10 @@ import {
   CheckCircle2,
   Clock3,
   Download,
+  Eye,
+  EyeOff,
   FileText,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -30,6 +33,7 @@ type ApiState = {
   employee: { fullName: string; designation: string; department: string };
   nav: { label: string; href: string }[];
   notifications: { id: string; title: string; body: string; read: boolean }[];
+  csrfToken?: string;
   dashboard: {
     totals: Record<string, number>;
     personal: {
@@ -67,13 +71,21 @@ function minutes(value = 0) {
 export function AppShell() {
   const [data, setData] = useState<ApiState | null>(null);
   const [fullData, setFullData] = useState<ApiState | null>(null);
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("ChangeMeBeforeProduction!123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [mobileNav, setMobileNav] = useState(false);
   const [dark, setDark] = useState(false);
   const [query, setQuery] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  function mutationHeaders() {
+    return {
+      "content-type": "application/json",
+      ...(data?.csrfToken ? { "x-csrf-token": data.csrfToken } : {}),
+    };
+  }
 
   async function refresh() {
     const me = await fetch("/api/auth/me");
@@ -118,16 +130,41 @@ export function AppShell() {
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/auth/logout", { method: "POST", headers: mutationHeaders() });
     setData(null);
     setFullData(null);
+  }
+
+  async function logoutAllDevices() {
+    setMessage("Signing out all sessions...");
+    await fetch("/api/auth/password", {
+      method: "POST",
+      headers: mutationHeaders(),
+      body: JSON.stringify({ action: "logout-all" }),
+    });
+    setData(null);
+    setFullData(null);
+  }
+
+  async function requestPasswordReset() {
+    if (!email) {
+      setMessage("Enter your email first.");
+      return;
+    }
+    const response = await fetch("/api/auth/password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "forgot", email }),
+    });
+    const body = await response.json().catch(() => ({}));
+    setMessage(response.ok ? "If the account exists, reset instructions have been prepared." : body.error || "Unable to request reset.");
   }
 
   async function attendance(action: string) {
     setMessage("Updating attendance...");
     const response = await fetch("/api/attendance", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: mutationHeaders(),
       body: JSON.stringify({ action, note: "Submitted from dashboard" }),
     });
     const body = await response.json().catch(() => ({}));
@@ -149,7 +186,7 @@ export function AppShell() {
     };
     const response = await fetch("/api/leave", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: mutationHeaders(),
       body: JSON.stringify(payload),
     });
     const body = await response.json().catch(() => ({}));
@@ -164,7 +201,7 @@ export function AppShell() {
     const firstTask = fullData?.tasks?.[0];
     const response = await fetch("/api/daily-reports", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: mutationHeaders(),
       body: JSON.stringify({
         date: String(form.get("date")),
         projectId: firstProject?.id || "proj_1",
@@ -231,18 +268,27 @@ export function AppShell() {
           </div>
           <form onSubmit={login} className="max-h-[calc(100dvh-3rem)] overflow-y-auto rounded-lg border border-white/10 bg-white p-5 text-slate-950 shadow-2xl sm:p-6">
             <h2 className="text-xl font-semibold">Sign in</h2>
-            <p className="mt-1 text-sm text-slate-500">Use one of the seeded role accounts.</p>
+            <p className="mt-1 text-sm text-slate-500">Enter your office account credentials.</p>
             <label className="mt-4 block text-sm font-medium" htmlFor="email">
               Email
             </label>
-            <input id="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
+            <input id="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
             <label className="mt-3 block text-sm font-medium" htmlFor="password">
               Password
             </label>
-            <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
+            <div className="mt-2 flex h-10 items-center rounded-md border border-slate-300 focus-within:border-cyan-600 focus-within:ring-2 focus-within:ring-cyan-100">
+              <input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-full min-w-0 flex-1 rounded-md px-3 outline-none" />
+              <button type="button" onClick={() => setShowPassword((value) => !value)} className="grid h-9 w-10 place-items-center text-slate-500" aria-label={showPassword ? "Hide password" : "Show password"}>
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
             <button className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-800 focus:outline-none focus:ring-2 focus:ring-cyan-200">
               <CheckCircle2 className="h-4 w-4" aria-hidden />
               Sign in securely
+            </button>
+            <button type="button" onClick={requestPasswordReset} className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50">
+              <KeyRound className="h-4 w-4" aria-hidden />
+              Forgot password
             </button>
             {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
           </form>
@@ -302,6 +348,10 @@ export function AppShell() {
             <button onClick={logout} className="flex h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm dark:border-slate-700">
               <LogOut className="h-4 w-4" aria-hidden />
               <span className="hidden sm:inline">Logout</span>
+            </button>
+            <button onClick={logoutAllDevices} className="hidden h-10 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm dark:border-slate-700 xl:flex">
+              <KeyRound className="h-4 w-4" aria-hidden />
+              Logout all
             </button>
           </div>
         </header>

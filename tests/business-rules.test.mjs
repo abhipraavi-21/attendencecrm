@@ -46,6 +46,24 @@ test("leave days skip weekly offs and support half day", () => {
   assert.equal(calculateLeaveDays({ from: "2026-09-21", to: "2026-09-21", halfDay: true }), 0.5);
 });
 
+test("overnight shift calculations treat next-day checkout correctly", () => {
+  const result = calculateAttendance({
+    checkInAt: "2026-09-22T16:30:00.000Z",
+    checkOutAt: "2026-09-23T01:30:00.000Z",
+    breaks: [],
+    policy: {
+      officeStart: "22:00",
+      officeEnd: "07:00",
+      graceMinutes: 0,
+      fullDayMinutes: 480,
+      halfDayMinutes: 240,
+    },
+  });
+  assert.equal(result.workedMinutes, 540);
+  assert.equal(result.status, "PRESENT");
+  assert.equal(result.overtimeMinutes, 60);
+});
+
 test("payroll summary derives payable days", () => {
   const summary = payrollSummary(
     [

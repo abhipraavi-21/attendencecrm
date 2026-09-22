@@ -10,7 +10,7 @@ Employees submit leave requests. The server rejects overlapping active requests 
 
 ## Daily Reports
 
-Employees submit one daily work report per date with project/task context, work completed, pending work, blockers, time spent, links, and next plan. Managers can review these records in the seeded dashboard data model.
+Employees submit one daily work report per date with project/task context, work completed, pending work, blockers, time spent, links, and next plan. Managers can review these records from dashboard and report data.
 
 ## Payroll-Ready Summary
 

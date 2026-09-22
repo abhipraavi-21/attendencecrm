@@ -21,6 +21,9 @@ export type User = {
   employeeId: string;
   active: boolean;
   forcePasswordChange: boolean;
+  failedLoginCount: number;
+  lockedUntil?: string;
+  sessionVersion: number;
   createdAt: string;
 };
 
