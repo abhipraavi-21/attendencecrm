@@ -1,0 +1,494 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  HR_ADMIN
+  MANAGER
+  EMPLOYEE
+  ACCOUNTANT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  PROBATION
+  NOTICE_PERIOD
+  RESIGNED
+  ARCHIVED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  WORK_FROM_HOME
+  FIELD_WORK
+  HOLIDAY
+  WEEKLY_OFF
+  PAID_LEAVE
+  UNPAID_LEAVE
+  MISSED_CHECKOUT
+}
+
+enum ApprovalStatus {
+  PENDING_MANAGER
+  PENDING_HR
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model User {
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  passwordHash        String
+  role                RoleName
+  employeeId          String     @unique
+  employee            Employee   @relation(fields: [employeeId], references: [id])
+  active              Boolean    @default(true)
+  forcePasswordChange Boolean    @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+
+  @@index([role, active])
+}
+
+model Employee {
+  id               String           @id @default(cuid())
+  employeeCode     String           @unique
+  fullName         String
+  workEmail        String           @unique
+  personalEmail    String?
+  phone            String
+  emergencyContact String?
+  dob              DateTime?
+  gender           String?
+  address          String?
+  departmentId     String
+  department       Department       @relation(fields: [departmentId], references: [id])
+  designationId    String
+  designation      Designation      @relation(fields: [designationId], references: [id])
+  managerId        String?
+  manager          Employee?        @relation("ManagerReports", fields: [managerId], references: [id])
+  reports          Employee[]       @relation("ManagerReports")
+  employmentType   String
+  joiningDate      DateTime
+  branchId         String
+  branch           Branch           @relation(fields: [branchId], references: [id])
+  shiftId          String
+  shift            Shift            @relation(fields: [shiftId], references: [id])
+  salaryAnnual     Decimal?         @db.Decimal(12, 2)
+  bankDetails      Json?
+  photoUrl         String?
+  status           EmployeeStatus   @default(ACTIVE)
+  lastWorkingDate  DateTime?
+  notes            String?
+  archivedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  user             User?
+  attendance       Attendance[]
+  breaks           AttendanceBreak[]
+  leaveRequests    LeaveRequest[]
+  leaveBalances    LeaveBalance[]
+  taskAssignees    TaskAssignee[]
+  dailyReports     DailyReport[]
+  documents        Attachment[]     @relation("EmployeeDocuments")
+  assets           AssetAssignment[]
+  reviews          PerformanceReview[] @relation("Reviewee")
+  reviewsGiven     PerformanceReview[] @relation("Reviewer")
+
+  @@index([departmentId, status])
+  @@index([managerId])
+}
+
+model Department {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  description String?
+  active      Boolean     @default(true)
+  employees   Employee[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Designation {
+  id          String      @id @default(cuid())
+  name        String
+  departmentId String?
+  employees   Employee[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Branch {
+  id          String      @id @default(cuid())
+  name        String
+  address     String
+  timezone    String
+  employees   Employee[]
+  shifts      Shift[]
+  holidays    Holiday[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Shift {
+  id              String     @id @default(cuid())
+  name            String
+  branchId        String?
+  branch          Branch?    @relation(fields: [branchId], references: [id])
+  startTime       String
+  endTime         String
+  overnight       Boolean    @default(false)
+  flexible        Boolean    @default(false)
+  fullDayMinutes  Int
+  halfDayMinutes  Int
+  employees       Employee[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model Attendance {
+  id                    String             @id @default(cuid())
+  employeeId            String
+  employee              Employee           @relation(fields: [employeeId], references: [id])
+  date                  DateTime
+  mode                  String             @default("WEB")
+  checkInAt             DateTime
+  checkOutAt            DateTime?
+  workedMinutes         Int                @default(0)
+  breakMinutes          Int                @default(0)
+  overtimeMinutes       Int                @default(0)
+  lateMinutes           Int                @default(0)
+  earlyDepartureMinutes Int                @default(0)
+  status                AttendanceStatus
+  verificationStatus    String             @default("PENDING")
+  ipAddress             String?
+  latitude              Decimal?           @db.Decimal(9, 6)
+  longitude             Decimal?           @db.Decimal(9, 6)
+  selfieAttachmentId    String?
+  deviceInfo            String?
+  correctionRequests    AttendanceCorrection[]
+  breaks                AttendanceBreak[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date, status])
+}
+
+model AttendanceBreak {
+  id           String     @id @default(cuid())
+  attendanceId String
+  attendance   Attendance @relation(fields: [attendanceId], references: [id])
+  employeeId   String
+  employee     Employee   @relation(fields: [employeeId], references: [id])
+  startAt      DateTime
+  endAt        DateTime?
+  reason       String?
+  createdAt    DateTime   @default(now())
+
+  @@index([employeeId, startAt])
+}
+
+model AttendanceCorrection {
+  id           String         @id @default(cuid())
+  attendanceId String
+  attendance   Attendance     @relation(fields: [attendanceId], references: [id])
+  requestedBy  String
+  reason       String
+  status       ApprovalStatus @default(PENDING_MANAGER)
+  managerNote  String?
+  hrNote       String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model LeaveType {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  paid           Boolean        @default(true)
+  carryForward   Boolean        @default(false)
+  annualAllowance Decimal       @db.Decimal(6, 2)
+  requests       LeaveRequest[]
+  balances       LeaveBalance[]
+}
+
+model LeaveBalance {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year        Int
+  opening     Decimal   @db.Decimal(6, 2)
+  accrued     Decimal   @db.Decimal(6, 2)
+  used        Decimal   @db.Decimal(6, 2)
+  adjusted    Decimal   @db.Decimal(6, 2)
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveRequest {
+  id          String         @id @default(cuid())
+  employeeId  String
+  employee    Employee       @relation(fields: [employeeId], references: [id])
+  leaveTypeId String
+  leaveType   LeaveType      @relation(fields: [leaveTypeId], references: [id])
+  from         DateTime
+  to           DateTime
+  days         Decimal        @db.Decimal(6, 2)
+  halfDay      Boolean        @default(false)
+  reason       String
+  attachmentId String?
+  status       ApprovalStatus @default(PENDING_MANAGER)
+  comments     Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([employeeId, status])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  name      String
+  date      DateTime
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  restricted Boolean  @default(false)
+}
+
+model Client {
+  id            String    @id @default(cuid())
+  name          String
+  companyName   String
+  contactPerson String
+  email         String
+  phone         String
+  address       String?
+  notes         String?
+  active        Boolean   @default(true)
+  projects      Project[]
+}
+
+model Project {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id])
+  description String?
+  managerId   String
+  startDate   DateTime
+  deadline    DateTime
+  priority    String
+  technology  String?
+  status      String
+  progress    Int             @default(0)
+  links       Json?
+  notes       String?
+  members     ProjectMember[]
+  tasks       Task[]
+  reports     DailyReport[]
+  attachments Attachment[]     @relation("ProjectAttachments")
+}
+
+model ProjectMember {
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id])
+  employeeId String
+  role       String?
+
+  @@id([projectId, employeeId])
+}
+
+model Task {
+  id             String         @id @default(cuid())
+  projectId      String
+  project        Project        @relation(fields: [projectId], references: [id])
+  title          String
+  description    String?
+  startDate      DateTime?
+  dueDate        DateTime
+  priority       String
+  estimatedHours Decimal?       @db.Decimal(8, 2)
+  actualHours    Decimal?       @db.Decimal(8, 2)
+  status         String
+  checklist      Json?
+  assignees      TaskAssignee[]
+  comments       Comment[]
+  reports        DailyReport[]
+  attachments    Attachment[]    @relation("TaskAttachments")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model TaskAssignee {
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@id([taskId, employeeId])
+}
+
+model DailyReport {
+  id              String   @id @default(cuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  date            DateTime
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id])
+  taskId          String?
+  task            Task?    @relation(fields: [taskId], references: [id])
+  workDescription String
+  completed       String
+  pending         String
+  status          String
+  timeSpentHours  Decimal  @db.Decimal(8, 2)
+  blockers        String?
+  link            String?
+  nextPlan        String
+  managerComment  String?
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([projectId, date])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id])
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model Attachment {
+  id          String     @id @default(cuid())
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  storageKey  String
+  employeeDocs Employee[] @relation("EmployeeDocuments")
+  projectFiles Project[]  @relation("ProjectAttachments")
+  taskFiles    Task[]     @relation("TaskAttachments")
+  createdAt    DateTime   @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model PayrollSummary {
+  id          String   @id @default(cuid())
+  employeeId  String
+  month       Int
+  year        Int
+  payableDays Decimal  @db.Decimal(6, 2)
+  presentDays Decimal  @db.Decimal(6, 2)
+  paidLeave   Decimal  @db.Decimal(6, 2)
+  unpaidLeave Decimal  @db.Decimal(6, 2)
+  overtimeMinutes Int
+  lateMarks   Int
+  adjustments Json?
+  locked      Boolean  @default(false)
+  notes       String?
+
+  @@unique([employeeId, month, year])
+}
+
+model PerformanceReview {
+  id             String   @id @default(cuid())
+  period         String
+  employeeId     String
+  employee       Employee @relation("Reviewee", fields: [employeeId], references: [id])
+  reviewerId     String
+  reviewer       Employee @relation("Reviewer", fields: [reviewerId], references: [id])
+  goals          Json
+  achievements   String
+  taskSummary    Json
+  attendanceSummary Json
+  managerRating  Int
+  selfRating     Int?
+  managerFeedback String
+  employeeComments String?
+  status         String
+}
+
+model Asset {
+  id             String            @id @default(cuid())
+  name           String
+  code           String            @unique
+  category       String
+  serialNumber   String?
+  purchaseDate   DateTime?
+  warrantyExpiry DateTime?
+  condition      String
+  assignments    AssetAssignment[]
+}
+
+model AssetAssignment {
+  id              String   @id @default(cuid())
+  assetId         String
+  asset           Asset    @relation(fields: [assetId], references: [id])
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  assignedAt      DateTime
+  returnedAt      DateTime?
+  returnCondition String?
+  notes           String?
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  audience    Json
+  publishedAt DateTime
+  expiresAt   DateTime?
+  pinned      Boolean  @default(false)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model CompanySetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
