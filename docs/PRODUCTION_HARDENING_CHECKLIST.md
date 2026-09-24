@@ -6,6 +6,7 @@
 - No browser-visible seeded account list.
 - `.env.example` contains variable names only.
 - Development seed users require `ALLOW_DEVELOPMENT_SEED_USERS=true` and `DEVELOPMENT_SEED_PASSWORD`.
+- Development reset links require `ALLOW_DEVELOPMENT_RESET_LINKS=true` and are disabled in production.
 - Production initial admin requires environment-provided credentials.
 
 ## Authentication
@@ -30,6 +31,7 @@
 
 ## External Integrations
 
-- SMTP credentials are required for real email delivery.
+- `PASSWORD_RESET_EMAIL_WEBHOOK_URL` is required for real password-reset email delivery.
+- SMTP variables are reserved for a future direct SMTP adapter.
 - Private object storage is required for production employee documents and attachments.
 - WhatsApp and biometric integrations remain future adapters until real provider credentials and devices are configured.

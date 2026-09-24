@@ -52,16 +52,19 @@ Required for production:
 - `INITIAL_ADMIN_EMAIL`
 - `INITIAL_ADMIN_PASSWORD`
 - `AUTH_SECRET`
+- `PASSWORD_RESET_EMAIL_WEBHOOK_URL`
 
 Optional:
 
-- SMTP variables for email delivery
+- `PASSWORD_RESET_EMAIL_WEBHOOK_SECRET`
+- SMTP variables for a future direct SMTP adapter
 - `UPLOAD_MAX_MB`
 - `OFFICE_TIME_ZONE`
 - `ALLOW_DEVELOPMENT_SEED_USERS`
 - `DEVELOPMENT_SEED_PASSWORD`
+- `ALLOW_DEVELOPMENT_RESET_LINKS` for local development only
 
-If SMTP is not configured, the app continues to work; email delivery should be logged as disabled by the production mail adapter.
+Password reset email is delivered by posting to `PASSWORD_RESET_EMAIL_WEBHOOK_URL`. If it is not configured, reset requests still return a generic response but no email is sent. In local development only, `ALLOW_DEVELOPMENT_RESET_LINKS=true` returns a reset link in the browser for testing.
 
 ## Database Setup
 
@@ -102,7 +105,7 @@ Use Vercel with a managed PostgreSQL database:
 2. Run Prisma generate/migrate during deployment or as a release step.
 3. Create the first admin from environment variables or a locked production seed command.
 4. Configure durable private storage for employee documents and attachments.
-5. Configure SMTP for password reset email delivery.
+5. Configure `PASSWORD_RESET_EMAIL_WEBHOOK_URL` for password reset email delivery.
 6. Run health check at `/api/health`.
 
 See `docs/DEPLOYMENT_CHECKLIST.md`.
@@ -117,6 +120,18 @@ See `docs/DEPLOYMENT_CHECKLIST.md`.
 ## Initial Administrator Setup
 
 Set `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`, and a strong `AUTH_SECRET` in the target environment before first boot. The first admin is forced to change password after creation. Do not store production credentials in Git.
+
+## Vercel Deployment Steps
+
+1. Create or connect a Vercel project to this repository.
+2. Provision a managed PostgreSQL database and set `DATABASE_URL`.
+3. Set `APP_URL` to the production URL, for example `https://attendencecrm.vercel.app`.
+4. Set a strong `AUTH_SECRET` of at least 32 characters.
+5. Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` only in the target environment.
+6. Set `EMAIL_FROM`, `PASSWORD_RESET_EMAIL_WEBHOOK_URL`, and optionally `PASSWORD_RESET_EMAIL_WEBHOOK_SECRET`.
+7. Keep `ALLOW_DEVELOPMENT_SEED_USERS` and `ALLOW_DEVELOPMENT_RESET_LINKS` disabled in production.
+8. Run `npm run db:generate` and `npm run db:migrate` during release.
+9. Deploy, then verify `/api/health`.
 
 ## Known Limitations
 

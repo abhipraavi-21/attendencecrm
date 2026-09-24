@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { error, json, requireProtectedMutation } from "@/lib/api";
 import { audit, getStore, requestLeave } from "@/lib/store";
+import { canAccessEmployee, canManageAllPeople } from "@/lib/access";
 
 const schema = z.object({
   action: z.enum(["request", "approve", "reject", "cancel"]),
@@ -41,8 +42,11 @@ export async function POST(request: Request) {
 
   const leave = store.leaves.find((item) => item.id === parsed.data.id);
   if (!leave) return error("Leave request not found.", 404);
-  const isApprover = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(auth.user.role);
+  const isApprover = canManageAllPeople(auth.user.role) || auth.user.role === "MANAGER";
   if (!isApprover && leave.employeeId !== auth.user.employeeId) return error("You cannot update this leave request.", 403);
+  if (isApprover && !canAccessEmployee(auth.user.role, auth.user.employeeId, leave.employeeId, store.employees)) {
+    return error("You cannot update this leave request.", 403);
+  }
   const before = { ...leave };
   if (parsed.data.action === "approve") {
     if (!isApprover) return error("Only managers or HR can approve leave.", 403);

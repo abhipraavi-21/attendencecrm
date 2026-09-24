@@ -22,11 +22,13 @@ import {
   ShieldCheck,
   Square,
   Sun,
+  X,
   UsersRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { AttendanceRecord, AuditLog, CompanySettings, DailyReport, Employee, LeaveRequest, Project, Task } from "@/lib/types";
+import type { AttendanceRecord, AuditLog, CompanySettings, DailyReport, LeaveRequest, Project, Task } from "@/lib/types";
+import type { PublicEmployee } from "@/lib/access";
 
 type ApiState = {
   user: { id: string; email: string; role: string; employeeId: string };
@@ -42,14 +44,14 @@ type ApiState = {
       payroll: Record<string, number>;
     };
   };
-  employees?: Employee[];
+  employees?: PublicEmployee[];
   attendance?: AttendanceRecord[];
   leaves?: LeaveRequest[];
   projects?: Project[];
   tasks?: Task[];
   dailyReports?: DailyReport[];
   auditLogs?: AuditLog[];
-  settings?: CompanySettings;
+  settings?: Partial<CompanySettings>;
 };
 
 const iconFor = (label: string): LucideIcon => {
@@ -75,10 +77,18 @@ export function AppShell() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [dark, setDark] = useState(false);
   const [query, setQuery] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [developmentResetLink, setDevelopmentResetLink] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [currentPath, setCurrentPath] = useState("/");
 
   function mutationHeaders() {
     return {
@@ -103,6 +113,8 @@ export function AppShell() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      setCurrentPath(window.location.pathname);
+      setResetToken(new URLSearchParams(window.location.search).get("token") || "");
       void refresh();
     }, 0);
     return () => window.clearTimeout(timer);
@@ -114,19 +126,26 @@ export function AppShell() {
 
   async function login(event: FormEvent) {
     event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     setMessage("Signing in...");
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      setMessage(body.error || "Login failed.");
-      return;
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setMessage(body.error || "Login failed.");
+        return;
+      }
+      setPassword("");
+      setMessage("Signed in.");
+      await refresh();
+    } finally {
+      setSubmitting(false);
     }
-    setMessage("Signed in.");
-    await refresh();
   }
 
   async function logout() {
@@ -146,18 +165,60 @@ export function AppShell() {
     setFullData(null);
   }
 
-  async function requestPasswordReset() {
-    if (!email) {
-      setMessage("Enter your email first.");
+  async function requestPasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setDevelopmentResetLink("");
+    setMessage("Preparing reset instructions...");
+    const form = new FormData(event.currentTarget);
+    const requestEmail = String(form.get("resetEmail") || "").trim();
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "forgot", email: requestEmail }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setMessage(body.message || "If an active account exists, reset instructions will be sent.");
+        setDevelopmentResetLink(body.developmentResetLink || "");
+      } else {
+        setMessage(body.error || "Unable to request reset.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function resetPasswordSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+    if (resetPassword !== resetConfirm) {
+      setMessage("Passwords do not match.");
       return;
     }
-    const response = await fetch("/api/auth/password", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "forgot", email }),
-    });
-    const body = await response.json().catch(() => ({}));
-    setMessage(response.ok ? "If the account exists, reset instructions have been prepared." : body.error || "Unable to request reset.");
+    setSubmitting(true);
+    setMessage("Updating password...");
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reset", token: resetToken, password: resetPassword }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(body.error || "Unable to reset password.");
+        return;
+      }
+      setResetPassword("");
+      setResetConfirm("");
+      setMessage("Password updated. You can sign in with the new password.");
+      window.history.replaceState(null, "", "/");
+      setCurrentPath("/");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function attendance(action: string) {
@@ -239,6 +300,8 @@ export function AppShell() {
     return rows.filter((item) => `${item.fullName} ${item.department} ${item.designation}`.toLowerCase().includes(query.toLowerCase()));
   }, [fullData, query]);
 
+  const canExportReports = data ? ["SUPER_ADMIN", "HR_ADMIN", "MANAGER", "ACCOUNTANT"].includes(data.user.role) : false;
+
   if (loading) {
     return (
       <main className="grid min-h-screen place-items-center bg-slate-50 text-slate-900">
@@ -248,6 +311,42 @@ export function AppShell() {
   }
 
   if (!data) {
+    if (currentPath === "/reset-password") {
+      return (
+        <main className="grid min-h-dvh place-items-center bg-slate-950 px-4 py-8 text-white">
+          <form onSubmit={resetPasswordSubmit} className="w-full max-w-md rounded-lg border border-white/10 bg-white p-5 text-slate-950 shadow-2xl sm:p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-lg bg-cyan-700 text-white">
+                <KeyRound className="h-5 w-5" aria-hidden />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold">Reset password</h1>
+                <p className="text-sm text-slate-500">Create a new secure password.</p>
+              </div>
+            </div>
+            <label className="block text-sm font-medium" htmlFor="reset-token">
+              Reset token
+            </label>
+            <input id="reset-token" value={resetToken} onChange={(event) => setResetToken(event.target.value)} required className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
+            <label className="mt-4 block text-sm font-medium" htmlFor="new-password">
+              New password
+            </label>
+            <input id="new-password" type="password" autoComplete="new-password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} required minLength={12} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
+            <p className="mt-2 text-xs text-slate-500">Use uppercase, lowercase, number, and symbol.</p>
+            <label className="mt-4 block text-sm font-medium" htmlFor="confirm-password">
+              Confirm password
+            </label>
+            <input id="confirm-password" type="password" autoComplete="new-password" value={resetConfirm} onChange={(event) => setResetConfirm(event.target.value)} required minLength={12} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
+            <button disabled={submitting} className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60">
+              <CheckCircle2 className="h-4 w-4" aria-hidden />
+              {submitting ? "Updating..." : "Update password"}
+            </button>
+            {message ? <p className="mt-3 text-sm text-slate-600" aria-live="polite">{message}</p> : null}
+          </form>
+        </main>
+      );
+    }
+
     return (
       <main className="min-h-dvh overflow-y-auto bg-slate-950 text-white">
         <section className="mx-auto grid min-h-dvh max-w-6xl items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] lg:items-center lg:py-8">
@@ -282,17 +381,45 @@ export function AppShell() {
                 {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
               </button>
             </div>
-            <button className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-800 focus:outline-none focus:ring-2 focus:ring-cyan-200">
+            <button disabled={submitting} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-800 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:cursor-not-allowed disabled:opacity-60">
               <CheckCircle2 className="h-4 w-4" aria-hidden />
-              Sign in securely
+              {submitting ? "Signing in..." : "Sign in securely"}
             </button>
-            <button type="button" onClick={requestPasswordReset} className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50">
+            <button type="button" onClick={() => { setResetEmail(email); setForgotOpen(true); setDevelopmentResetLink(""); }} className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm text-slate-700 hover:bg-slate-50">
               <KeyRound className="h-4 w-4" aria-hidden />
               Forgot password
             </button>
-            {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
+            {message ? <p className="mt-3 text-sm text-slate-600" aria-live="polite">{message}</p> : null}
           </form>
         </section>
+        {forgotOpen ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 px-4 py-6">
+            <form onSubmit={requestPasswordReset} className="w-full max-w-md rounded-lg bg-white p-5 text-slate-950 shadow-2xl sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold">Forgot password</h2>
+                  <p className="mt-1 text-sm text-slate-500">Enter your registered email. If the account exists, reset instructions will be sent.</p>
+                </div>
+                <button type="button" onClick={() => setForgotOpen(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 text-slate-500" aria-label="Close forgot password">
+                  <X className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+              <label className="mt-5 block text-sm font-medium" htmlFor="reset-email">
+                Registered email
+              </label>
+              <input id="reset-email" name="resetEmail" type="email" autoComplete="email" required value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100" />
+              <button disabled={submitting} className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60">
+                <KeyRound className="h-4 w-4" aria-hidden />
+                {submitting ? "Sending..." : "Send reset instructions"}
+              </button>
+              {developmentResetLink ? (
+                <a href={developmentResetLink} className="mt-3 block break-all rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  Development reset link: {developmentResetLink}
+                </a>
+              ) : null}
+            </form>
+          </div>
+        ) : null}
       </main>
     );
   }
@@ -442,10 +569,16 @@ export function AppShell() {
                   <div className="flex justify-between"><dt className="text-slate-500">Active record</dt><dd>{activeBreak ? "Checked in" : "Closed"}</dd></div>
                 </dl>
               </div>
-              <button onClick={exportCsv} className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white">
-                <Download className="h-4 w-4" aria-hidden />
-                Export attendance CSV
-              </button>
+              {canExportReports ? (
+                <button onClick={exportCsv} className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-semibold text-white">
+                  <Download className="h-4 w-4" aria-hidden />
+                  Export attendance CSV
+                </button>
+              ) : (
+                <div className="rounded-md border border-slate-200 p-3 text-sm text-slate-500 dark:border-slate-800">
+                  Reports export is available to authorized reporting roles.
+                </div>
+              )}
             </div>
           </section>
 
@@ -470,6 +603,7 @@ export function AppShell() {
                     <p className="mt-3 text-xs text-slate-500">{item.designation} · {item.branch}</p>
                   </div>
                 ))}
+                {!employees.length ? <p className="text-sm text-slate-500">No employees match the current search.</p> : null}
               </div>
             </Panel>
 

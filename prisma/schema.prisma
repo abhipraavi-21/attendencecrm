@@ -54,13 +54,29 @@ model User {
   employee            Employee   @relation(fields: [employeeId], references: [id])
   active              Boolean    @default(true)
   forcePasswordChange Boolean    @default(false)
+  failedLoginCount    Int        @default(0)
+  lockedUntil         DateTime?
+  sessionVersion      Int        @default(1)
   lastLoginAt         DateTime?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
   auditLogs           AuditLog[]
   notifications       Notification[]
+  resetTokens         PasswordResetToken[]
 
   @@index([role, active])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 model Employee {

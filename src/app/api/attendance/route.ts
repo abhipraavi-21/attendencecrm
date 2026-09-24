@@ -2,6 +2,7 @@ import { z } from "zod";
 import { error, json, requireProtectedMutation } from "@/lib/api";
 import { audit, getStore, recomputeAttendance } from "@/lib/store";
 import type { AttendanceRecord, BreakRecord } from "@/lib/types";
+import { canAccessEmployee, canManageAllPeople } from "@/lib/access";
 
 const schema = z.object({
   action: z.enum(["check-in", "check-out", "start-break", "end-break", "manual-entry", "correction-request"]),
@@ -20,8 +21,10 @@ export async function POST(request: Request) {
   if (!parsed.success) return error("Invalid attendance action.", 422);
   const store = getStore();
   const employeeId = parsed.data.employeeId || auth.user.employeeId;
-  const canManage = ["SUPER_ADMIN", "HR_ADMIN", "MANAGER"].includes(auth.user.role);
-  if (employeeId !== auth.user.employeeId && !canManage) return error("You can only manage your own attendance.", 403);
+  const canManage = canManageAllPeople(auth.user.role) || auth.user.role === "MANAGER";
+  if (employeeId !== auth.user.employeeId && (!canManage || !canAccessEmployee(auth.user.role, auth.user.employeeId, employeeId, store.employees))) {
+    return error("You can only manage attendance for permitted employees.", 403);
+  }
 
   const open = store.attendance.find((item) => item.employeeId === employeeId && !item.checkOutAt);
   if (parsed.data.action === "check-in") {

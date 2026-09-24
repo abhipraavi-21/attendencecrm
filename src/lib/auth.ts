@@ -3,9 +3,17 @@ import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import type { Role, User } from "./types";
 import { getStore } from "./store";
+export { isStrongPassword } from "./password-policy";
 
 const cookieName = process.env.SESSION_COOKIE_NAME || "attendance_crm_session";
-const secret = process.env.AUTH_SECRET || "development-only-change-me";
+
+function getAuthSecret() {
+  const value = process.env.AUTH_SECRET;
+  if (process.env.NODE_ENV === "production" && (!value || value.length < 32 || value === "development-only-change-me")) {
+    throw new Error("AUTH_SECRET must be set to a strong value in production.");
+  }
+  return value || "development-only-change-me";
+}
 
 export type SessionUser = {
   id: string;
@@ -24,7 +32,7 @@ export function verifyPassword(password: string, hash: string) {
 }
 
 export function signSession(user: User) {
-  return jwt.sign({ sub: user.id, email: user.email, role: user.role, employeeId: user.employeeId, sv: user.sessionVersion }, secret, {
+  return jwt.sign({ sub: user.id, email: user.email, role: user.role, employeeId: user.employeeId, sv: user.sessionVersion }, getAuthSecret(), {
     expiresIn: "8h",
   });
 }
@@ -32,7 +40,7 @@ export function signSession(user: User) {
 export function verifySessionToken(token?: string): SessionUser | null {
   if (!token) return null;
   try {
-    const payload = jwt.verify(token, secret) as Record<string, unknown>;
+    const payload = jwt.verify(token, getAuthSecret()) as Record<string, unknown>;
     if (!payload.sub || !payload.email || !payload.role || !payload.employeeId || typeof payload.sv !== "number") return null;
     return {
       id: String(payload.sub),
@@ -63,6 +71,7 @@ export async function setSessionCookie(token: string) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 8,
+    priority: "high",
   });
 }
 
